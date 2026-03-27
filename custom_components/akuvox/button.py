@@ -51,7 +51,6 @@ class AkuvoxDoorRelayEntity(ButtonEntity, AkuvoxEntity):
     _client: AkuvoxApiClient
     _name: str = ""
     _host: str = ""
-    _token: str = ""
     _data: str = ""
 
     def __init__(
@@ -73,7 +72,6 @@ class AkuvoxDoorRelayEntity(ButtonEntity, AkuvoxEntity):
         self._client = client
         self._name = unique_name
         self._host = self.get_saved_value("host")
-        self._token = self.get_saved_value("token")
         self._data = data
 
         self._attr_unique_id = unique_name
@@ -87,12 +85,10 @@ class AkuvoxDoorRelayEntity(ButtonEntity, AkuvoxEntity):
             manufacturer=NAME,
         )
 
-    def press(self) -> None:
+    async def async_press(self) -> None:
         """Trigger the door relay."""
-        self._client.make_opendoor_request(
+        await self._client.async_make_opendoor_request(
             name=self._name,
             host=self._host,
-            token=self._token,
             data=self._data
         )
-

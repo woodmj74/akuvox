@@ -22,6 +22,7 @@ class AkuvoxEntity(Entity):
         host = self.get_saved_value("host")
         auth_token = self.get_saved_value("auth_token")
         token = self.get_saved_value("token")
+        refresh_token = self.get_saved_value("refresh_token")
         phone_number = self.get_saved_value("phone_number")
         country_code = self.get_saved_value("country_code") if len(self.get_saved_value("country_code")) > 0 else None
         self.client.init_api_with_data(
@@ -30,6 +31,7 @@ class AkuvoxEntity(Entity):
             subdomain=None,
             auth_token=auth_token,
             token=token,
+            refresh_token=refresh_token,
             phone_number=phone_number,
             country_code=country_code)
 

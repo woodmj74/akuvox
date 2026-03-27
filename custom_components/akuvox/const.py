@@ -12,6 +12,7 @@ DEFAULT_COUNTRY_CODE = "+1"
 DEFAULT_PHONE_NUMBER = "555-5555"
 DEFAULT_APP_TOKEN = ""
 DEFAULT_TOKEN = ""
+DEFAULT_REFRESH_TOKEN = ""
 
 SUBDOMAIN_AU = "aucloud"
 SUBDOMAIN_C = "ccloud"
@@ -457,6 +458,7 @@ SMS_LOGIN_API_VERSION = "6.6"
 REST_SERVER_API_VERSION = "6.0"
 OPENDOOR_API_VERSION = "4.3"
 USERCONF_API_VERSION = "6.5"
+REFRESH_TOKEN_API_VERSION = "6.8"
 REST_SERVER_ADDR = "gate.subdomain.akuvox.com"
 REST_SERVER_PORT = 8600
 
@@ -466,6 +468,10 @@ API_SERVERS_LIST = "servers_list"
 API_SMS_LOGIN = "sms_login"
 API_USERCONF = "userconf"
 API_OPENDOOR = "opendoor"
+API_REFRESH_TOKEN = "refresh_token"
+
+# Refresh every 5 days to stay ahead of 7-day token expiry.
+TOKEN_REFRESH_INTERVAL_DAYS = 5
 
 API_APP_HOST = "subdomain.akuvox.com/web-server/v3/app/"
 API_GET_PERSONAL_TEMP_KEY_LIST = "tempKey/getPersonalTempKeyList?row=20&page=1"

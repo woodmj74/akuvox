@@ -13,6 +13,7 @@ from .const import (
     DOMAIN,
     DEFAULT_TOKEN,
     DEFAULT_APP_TOKEN,
+    DEFAULT_REFRESH_TOKEN,
     LOGGER,
     LOCATIONS_DICT,
     COUNTRY_PHONE,
@@ -176,6 +177,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 "phone_number", "").replace("-", "").replace(" ", "")
             token: str = user_input.get("token", "")
             auth_token: str = user_input.get("auth_token", "")
+            refresh_token: str = user_input.get("refresh_token", "")
             subdomain: str = user_input.get("subdomain", "Default")
             subdomain = subdomain if subdomain != "Default" else helpers.get_subdomain_from_country_code(country_code)
 
@@ -185,12 +187,15 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 "phone_number": phone_number,
                 "token": token,
                 "auth_token": auth_token,
+                "refresh_token": refresh_token,
                 "subdomain": subdomain
             }
 
             # Perform login via auth_token, token and phone number
             if all(len(value) > 0 for value in (country_code, phone_number, token, auth_token)):
                 # Retrieve servers_list data.
+                if refresh_token:
+                    self.akuvox_api_client._data.refresh_token = refresh_token # type: ignore
                 login_successful = await self.akuvox_api_client.async_make_servers_list_request(
                     hass=self.hass,
                     auth_token=auth_token,
@@ -368,6 +373,11 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 msg=None,
                 default=user_input.get("token", DEFAULT_TOKEN),  # type: ignore
                 description="Your SmartPlus account's token string"): str,
+            vol.Optional(
+                "refresh_token",
+                msg=None,
+                default=user_input.get("refresh_token", DEFAULT_REFRESH_TOKEN),  # type: ignore
+                description="Your SmartPlus account's refresh_token string"): str,
             vol.Optional("subdomain",
                          default="Default", # type: ignore
                          description="Manually set the regional API subdomain"):
@@ -426,6 +436,9 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional("token",
                          default=self.get_data_key_value("token", False) # type: ignore
             ): str,
+            vol.Optional("refresh_token",
+                         default=self.get_data_key_value("refresh_token", False) # type: ignore
+            ): str,
             vol.Optional("subdomain",
                 default=current_subdomain, # type: ignore
                 description="Manually set the regional API subdomain"):
@@ -461,6 +474,7 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             self.akuvox_api_client._data.host = self.get_data_key_value("host") # type: ignore
             self.akuvox_api_client._data.auth_token = self.get_data_key_value("auth_token") # type: ignore
             self.akuvox_api_client._data.token = self.get_data_key_value("token") # type: ignore
+            self.akuvox_api_client._data.refresh_token = self.get_data_key_value("refresh_token") # type: ignore
             self.akuvox_api_client._data.phone_number = self.get_data_key_value("phone_number") # type: ignore
             self.akuvox_api_client._data.wait_for_image_url = self.get_data_key_value("wait_for_image_url") # type: ignore
 
@@ -474,7 +488,8 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                 # Retrieve device data
                 await self.akuvox_api_client.async_retrieve_user_data_with_tokens(
                     user_input["auth_token"],
-                    user_input["token"])
+                    user_input["token"],
+                    user_input.get("refresh_token"))
                 devices_json = self.akuvox_api_client.get_devices_json()
                 if devices_json is not None and all(key in devices_json for key in (
                     "camera_data",
@@ -507,6 +522,12 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                     msg=None,
                     default=user_input.get("token", ""),
                     description="Your SmartPlus user's token."
+                ): str,
+                vol.Optional(
+                    "refresh_token",
+                    msg=None,
+                    default=user_input.get("refresh_token", ""),
+                    description="Your SmartPlus user's refresh_token."
                 ): str,
                 vol.Optional("subdomain",
                     default="Default", # type: ignore

@@ -455,6 +455,7 @@ COUNTRY_PHONE: dict = {
 
 SMS_LOGIN_API_VERSION = "6.6"
 REST_SERVER_API_VERSION = "6.0"
+REFRESH_TOKEN_API_VERSION = "6.8"
 OPENDOOR_API_VERSION = "4.3"
 USERCONF_API_VERSION = "6.5"
 REST_SERVER_ADDR = "gate.subdomain.akuvox.com"
@@ -464,6 +465,7 @@ API_REST_SERVER_DATA = "rest_server"
 API_SEND_SMS = "send_mobile_checkcode"
 API_SERVERS_LIST = "servers_list"
 API_SMS_LOGIN = "sms_login"
+API_REFRESH_TOKEN = "refresh_token"
 API_USERCONF = "userconf"
 API_OPENDOOR = "opendoor"
 
@@ -474,6 +476,9 @@ API_GET_PERSONAL_DOOR_LOG = "log/getDoorLog?row=1"
 TEMP_KEY_QR_HOST = "subdomain.akuvox.com"
 
 DATA_STORAGE_KEY = "akuvox_data_storage_key"
+AUTH_STORAGE_KEY = "akuvox_auth"
+DEFAULT_TOKEN_VALID_SECONDS = 7 * 24 * 60 * 60
+TOKEN_REFRESH_SAFETY_SECONDS = 24 * 60 * 60
 
 CAPTURE_TIME_KEY = "CaptureTime"
 PIC_URL_KEY = "PicUrl"

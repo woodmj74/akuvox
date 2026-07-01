@@ -48,7 +48,16 @@ class AkuvoxDataUpdateCoordinator(DataUpdateCoordinator):
         """Update data via library."""
         try:
             if await self.client.async_retrieve_user_data():
-                data: dict = self.client.get_devices_json()
+                account_data: dict = self.client.get_devices_json()
+                data = {
+                    key: account_data[key]
+                    for key in (
+                        "camera_data",
+                        "door_relay_data",
+                        "door_keys_data",
+                    )
+                    if key in account_data
+                }
                 if data is not None:
                     LOGGER.debug("Saving user's data to local storage")
                     store = storage.Store(self.hass, 1, DATA_STORAGE_KEY)
@@ -58,4 +67,3 @@ class AkuvoxDataUpdateCoordinator(DataUpdateCoordinator):
             raise ConfigEntryAuthFailed(exception) from exception
         except AkuvoxApiClientError as exception:
             raise UpdateFailed(exception) from exception
-

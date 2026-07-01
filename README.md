@@ -217,11 +217,20 @@ Sigining in via SMS verification will sign you out from the SmartPlus app on you
 
 ### Method 2: App Tokens (Advanced)
 
-Sigining in using your SmartLife app tokens will allow you to remain signed in to the SmartLife app on your device.
+Akuvox rotates its access and refresh tokens as a pair. Home Assistant should
+therefore be the only active client for the captured session. If the SmartPlus
+app refreshes the same session first, Home Assistant's saved token pair becomes
+invalid; if Home Assistant refreshes first, the app may be signed out. A
+dedicated family/member account for Home Assistant is recommended.
 
-1. Obtain your `auth_token` and `token` values (see the [Finding you SmartPlus Account Tokens](#finding-your-smartplus-account-tokens) section below).
+1. Obtain the `auth_token`, `token`, and `refresh_token` values (see the [Finding your SmartPlus Account Tokens](#finding-your-smartplus-account-tokens) section below).
 
-1. Enter your phone number, `auth_token` and `token` values and click `SUBMIT`:
+2. Close the SmartPlus app for this account. Do not explicitly log out until
+   you have confirmed whether logout revokes the captured session.
+
+3. Enter your phone number and all three token values, then click `SUBMIT`.
+   Setup immediately performs one rotation to verify the refresh token and make
+   Home Assistant the owner of the replacement pair:
 <img src="https://user-images.githubusercontent.com/1849295/269958871-071008db-c2d8-4455-a612-eb0a9721ea39.png" width="400">
 
 ### You should now have one device per Akuvox door camera with a camera and door relay button/s entity
@@ -235,7 +244,7 @@ Once configured, Akuvox cameras & door buttons will appear as a device with a ca
 
 Via the integration's `CONFIGURE` button you can adjust the following:
 
-1. Update your SmartLife account's tokens used to communicate with the Akuvox API. This is particularly useful if you logged into the SmartLife app on your device after adding the integration. For help accessing your account's tokens, please refer to the [Finding you SmartPlus Account Tokens](#finding-your-smartplus-account-tokens) section below.
+1. Replace the complete `auth_token`, `token`, and `refresh_token` set if Akuvox requires reauthentication.
    
 1. Choose between two options for `akuvox_door_update` event handling:
    - Wait for camera screenshots to become available before triggering the event.
@@ -251,6 +260,19 @@ To obtain your SmartPlus account tokens you can use an HTTP proxy (such as [mitm
 
 3. Search for the `sms_login` request. Select it and click on the `Response` tab. Set the View to `JSON`.
 
-    You should find your `auth_token` and `token` values:
+    You should find the `auth_token`, `token`, and `refresh_token` values.
+    Home Assistant automatically rotates and securely persists the latter two
+    before their reported seven-day validity expires.
 
 ![instructions](https://github.com/user-attachments/assets/c1550332-4499-48f0-a55e-34dea410e558)
+
+## Debugging token refresh
+
+Use **Settings → Devices & services → Akuvox SmartPlus → Enable debug
+logging** while validating refresh. Debug logs show scheduling, response status,
+non-reversible token fingerprints, persistence, and `userconf` validation.
+Actual tokens and token fragments are never logged.
+
+For a controlled initial test, run the `akuvox.refresh_tokens` action with the
+integration's config-entry ID. This immediately rotates the pair, persists it,
+and validates it with `userconf`; it is not needed during normal operation.

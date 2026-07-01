@@ -1,6 +1,8 @@
 """Adds config flow for Akuvox."""
 from __future__ import annotations
 
+import time
+
 from homeassistant import config_entries
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -21,6 +23,7 @@ from .const import (
 from .helpers import AkuvoxHelpers
 
 helpers = AkuvoxHelpers()
+TOKEN_SELECTOR = selector.selector({"text": {"type": "password"}})
 
 class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Akuvox."""
@@ -57,6 +60,59 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             menu_options=["sms_sign_in_warning", "app_tokens_sign_in"],
             description_placeholders=user_input,
+        )
+
+    async def async_step_reauth(self, entry_data):
+        """Request a complete replacement token set."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input=None):
+        """Validate replacement credentials and update the existing entry."""
+        entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
+        )
+        errors = {}
+        token_selector = selector.selector({"text": {"type": "password"}})
+        schema = vol.Schema(
+            {
+                vol.Required("auth_token"): token_selector,
+                vol.Required("token"): token_selector,
+                vol.Required("refresh_token"): token_selector,
+            }
+        )
+
+        if user_input is not None and entry is not None:
+            client = AkuvoxApiClient(
+                session=async_get_clientsession(self.hass),
+                hass=self.hass,
+                entry=entry,
+            )
+            client._data.auth_token = user_input["auth_token"]
+            client._data.token = user_input["token"]
+            client._data.refresh_token = user_input["refresh_token"]
+            client._data.token_expires_at = int(time.time())
+
+            if await client.async_refresh_token(force=True):
+                new_data = dict(entry.data)
+                new_data.update(
+                    {
+                        "auth_token": user_input["auth_token"],
+                        "token": client._data.token,
+                        "refresh_token": client._data.refresh_token,
+                        "token_expires_at": client._data.token_expires_at,
+                    }
+                )
+                self.hass.config_entries.async_update_entry(
+                    entry, data=new_data
+                )
+                return self.async_abort(reason="reauth_successful")
+
+            errors["base"] = "invalid_auth"
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=schema,
+            errors=errors,
         )
 
     async def async_step_sms_sign_in_warning(self, user_input=None):
@@ -176,6 +232,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 "phone_number", "").replace("-", "").replace(" ", "")
             token: str = user_input.get("token", "")
             auth_token: str = user_input.get("auth_token", "")
+            refresh_token: str = user_input.get("refresh_token", "")
             subdomain: str = user_input.get("subdomain", "Default")
             subdomain = subdomain if subdomain != "Default" else helpers.get_subdomain_from_country_code(country_code)
 
@@ -185,11 +242,21 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 "phone_number": phone_number,
                 "token": token,
                 "auth_token": auth_token,
+                "refresh_token": refresh_token,
                 "subdomain": subdomain
             }
 
             # Perform login via auth_token, token and phone number
-            if all(len(value) > 0 for value in (country_code, phone_number, token, auth_token)):
+            if all(
+                len(value) > 0
+                for value in (
+                    country_code,
+                    phone_number,
+                    token,
+                    auth_token,
+                    refresh_token,
+                )
+            ):
                 # Retrieve servers_list data.
                 login_successful = await self.akuvox_api_client.async_make_servers_list_request(
                     hass=self.hass,
@@ -197,8 +264,26 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     token=token,
                     country_code=country_code,
                     phone_number=phone_number,
-                    subdomain=subdomain)
+                    subdomain=subdomain,
+                    refresh_token=refresh_token)
                 if login_successful is True:
+                    # Claim this rotating session immediately and prove that
+                    # the captured refresh token is valid. The replacement
+                    # pair is what gets saved in the config entry.
+                    if not await self.akuvox_api_client.async_refresh_token(
+                        force=True,
+                        persist=False,
+                    ):
+                        return self.async_show_form(
+                            step_id="app_tokens_sign_in",
+                            data_schema=vol.Schema(
+                                self.get_app_tokens_sign_in_schema(user_input)
+                            ),
+                            description_placeholders=user_input,
+                            last_step=True,
+                            errors={"base": "invalid_auth"},
+                        )
+
                     # Retrieve connected device data
                     await self.akuvox_api_client.async_retrieve_user_data()
                     devices_json = self.akuvox_api_client.get_devices_json()
@@ -362,12 +447,18 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 "auth_token",
                 msg=None,
                 default=user_input.get("auth_token", DEFAULT_APP_TOKEN),  # type: ignore
-                description="Your SmartPlus account's auth_token string"): str,
+                description="Your SmartPlus account's auth_token string"): TOKEN_SELECTOR,
             vol.Required(
                 "token",
                 msg=None,
                 default=user_input.get("token", DEFAULT_TOKEN),  # type: ignore
-                description="Your SmartPlus account's token string"): str,
+                description="Your SmartPlus account's token string"): TOKEN_SELECTOR,
+            vol.Required(
+                "refresh_token",
+                msg=None,
+                description=(
+                    "Your SmartPlus account's refresh_token string"
+                )): TOKEN_SELECTOR,
             vol.Optional("subdomain",
                          default="Default", # type: ignore
                          description="Manually set the regional API subdomain"):
@@ -421,11 +512,15 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                                  custom_value=False),
                                  ),
             vol.Optional("auth_token",
-                         default=self.get_data_key_value("auth_token", False) # type: ignore
-            ): str,
+                         default=self.get_data_key_value("auth_token", "") # type: ignore
+            ): TOKEN_SELECTOR,
             vol.Optional("token",
-                         default=self.get_data_key_value("token", False) # type: ignore
-            ): str,
+                         default=self.get_data_key_value("token", "") # type: ignore
+            ): TOKEN_SELECTOR,
+            vol.Optional(
+                "refresh_token",
+                default=self.get_data_key_value("refresh_token", ""),
+            ): TOKEN_SELECTOR,
             vol.Optional("subdomain",
                 default=current_subdomain, # type: ignore
                 description="Manually set the regional API subdomain"):
@@ -461,6 +556,7 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             self.akuvox_api_client._data.host = self.get_data_key_value("host") # type: ignore
             self.akuvox_api_client._data.auth_token = self.get_data_key_value("auth_token") # type: ignore
             self.akuvox_api_client._data.token = self.get_data_key_value("token") # type: ignore
+            self.akuvox_api_client._data.refresh_token = self.get_data_key_value("refresh_token") # type: ignore
             self.akuvox_api_client._data.phone_number = self.get_data_key_value("phone_number") # type: ignore
             self.akuvox_api_client._data.wait_for_image_url = self.get_data_key_value("wait_for_image_url") # type: ignore
 
@@ -474,7 +570,8 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                 # Retrieve device data
                 await self.akuvox_api_client.async_retrieve_user_data_with_tokens(
                     user_input["auth_token"],
-                    user_input["token"])
+                    user_input["token"],
+                    user_input.get("refresh_token", ""))
                 devices_json = self.akuvox_api_client.get_devices_json()
                 if devices_json is not None and all(key in devices_json for key in (
                     "camera_data",
@@ -501,13 +598,19 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                     msg=None,
                     default=user_input.get("auth_token", ""),
                     description="Your SmartPlus user's auth_token."
-                ): str,
+                ): TOKEN_SELECTOR,
                 vol.Optional(
                     "token",
                     msg=None,
                     default=user_input.get("token", ""),
                     description="Your SmartPlus user's token."
-                ): str,
+                ): TOKEN_SELECTOR,
+                vol.Optional(
+                    "refresh_token",
+                    msg=None,
+                    default=user_input.get("refresh_token", ""),
+                    description="Your SmartPlus user's refresh_token."
+                ): TOKEN_SELECTOR,
                 vol.Optional("subdomain",
                     default="Default", # type: ignore
                     description="Manually set the regional API subdomain"):
@@ -531,6 +634,15 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
 
         # User input is valid, update the options
         LOGGER.debug("Updating configuration...")
+        if all(
+            user_input.get(key)
+            for key in ("auth_token", "token", "refresh_token")
+        ):
+            await self.akuvox_api_client.async_replace_auth_session(
+                user_input["auth_token"],
+                user_input["token"],
+                user_input["refresh_token"],
+            )
         # user_input = None
         return self.async_create_entry(
             data=user_input, # type: ignore

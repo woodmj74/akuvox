@@ -1,0 +1,12 @@
+refresh_tokens:
+  name: Refresh tokens
+  description: >-
+    Force Akuvox to rotate and validate the saved token pair. Use this only
+    for controlled testing; automatic refresh normally runs before expiry.
+  fields:
+    entry_id:
+      name: Config entry
+      description: The config entry ID shown in the integration diagnostics.
+      required: true
+      selector:
+        text:

@@ -5,13 +5,13 @@
                 "title": "Akuvox SmartPlus Sign-In",
                 "description": "Choose a sign-in method to connect to your Akuvox SmartPlus account:",
                 "menu_options": {
-                    "sms_sign_in_warning": "1. SMS Verification (Recommended)",
+                    "sms_sign_in_warning": "1. SMS Verification",
                     "app_tokens_sign_in": "2. App Tokens (Advanced)"
                 }
             },
             "sms_sign_in_warning": {
                 "title": "SMS Verification",
-                "description": "⚠️ Warning ⚠️\n\nChoosing this sign-in method will log you out of the SmartPlus app on your phone.\n\nTo stay logged in to the app and use both the app and this integration, please use the `App Tokens` sign-in method instead."
+                "description": "Warning: Akuvox sessions use rotating credentials. For reliable automatic refresh, use a dedicated family/member account for Home Assistant and do not keep that account active in the SmartPlus app."
             },
             "sms_sign_in": {
                 "title": "SMS Verification",
@@ -24,13 +24,23 @@
             },
             "app_tokens_sign_in": {
                 "title": "Sign In via App Tokens",
-                "description": "Please enter your account details below.\n\nℹ️ To obtain your tokens please review the documentation.",
+                "description": "Enter the complete token set captured from SmartPlus. A dedicated family/member account is recommended because Home Assistant and the app cannot safely rotate the same session independently.",
                 "data": {
                     "country_code": "Country",
                     "phone_number": "Phone Number (without the country code)",
                     "token": "Token",
                     "auth_token": "Auth Token",
+                    "refresh_token": "Refresh Token",
                     "subdomain": "Manually set the regional API subdomain"
+                }
+            },
+            "reauth_confirm": {
+                "title": "Reconnect Akuvox SmartPlus",
+                "description": "The saved Akuvox session can no longer be refreshed. Enter a newly captured complete token set.",
+                "data": {
+                    "auth_token": "Auth Token",
+                    "token": "Token",
+                    "refresh_token": "Refresh Token"
                 }
             },
             "verify_sms_code": {
@@ -49,16 +59,23 @@
         "step": {
             "init": {
                 "title": "SmartPlus User Tokens & Event Configuration",
-                "description": "If you signed into the SmartPlus app on your device after adding the integration, you can update your user tokens below. This will allow Home Assistant to communicate with Akuvox's servers while you remain signed in on your device.\n\nPlease refer to the documentation for instructions on how to extract your token string.",
+                "description": "Replace the complete token set if Akuvox requires reauthentication. Home Assistant will own and automatically rotate this session.",
                 "data": {
                     "country": "The country registered in your Akuvox SmartPlus account",
-                    "override": "Use the following SmartLife account tokens:",
-                    "auth_token": "Your SmartLife `auth_token` value",
-                    "token": "Your SmartLife `token` value",
+                    "override": "Use the following SmartPlus account tokens:",
+                    "auth_token": "Your SmartPlus `auth_token` value",
+                    "token": "Your SmartPlus `token` value",
+                    "refresh_token": "Your SmartPlus `refresh_token` value",
                     "subdomain": "Manually set the regional API subdomain",
-                    "event_screenshot_options": "Screenshot URLS for `akuvox_door_update` events:"
+                    "event_screenshot_options": "Screenshot URLs for `akuvox_door_update` events:"
                 }
             }
         }
+    },
+    "error": {
+        "invalid_auth": "Akuvox rejected the supplied token set."
+    },
+    "abort": {
+        "reauth_successful": "Akuvox authentication was updated successfully."
     }
 }

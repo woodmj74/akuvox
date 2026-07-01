@@ -2,6 +2,9 @@
 from __future__ import annotations
 # from dataclasses import dataclass
 
+import asyncio
+import time
+
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import storage
@@ -12,6 +15,8 @@ from .const import (
     PIC_URL_KEY,
     CAPTURE_TIME_KEY,
     DATA_STORAGE_KEY,
+    AUTH_STORAGE_KEY,
+    DEFAULT_TOKEN_VALID_SECONDS,
     LOCATIONS_DICT,
 )
 from .helpers import AkuvoxHelpers
@@ -29,6 +34,8 @@ class AkuvoxData:
     app_type: str = ""
     auth_token: str = ""
     token: str = ""
+    refresh_token: str = ""
+    token_expires_at: int = 0
     phone_number: str = ""
     wait_for_image_url: bool = False
     rtsp_ip: str = ""
@@ -45,6 +52,7 @@ class AkuvoxData:
                  subdomain: str = None, # type: ignore
                  auth_token: str = None, # type: ignore
                  token: str = None, # type: ignore
+                 refresh_token: str = None, # type: ignore
                  country_code: str = None, # type: ignore
                  phone_number: str = None, # type: ignore
                  wait_for_image_url: bool = False):
@@ -54,6 +62,8 @@ class AkuvoxData:
         self.host = host if host else self.get_value_for_key(entry, "host", host) # type: ignore
         self.auth_token = auth_token if auth_token else self.get_value_for_key(entry, "auth_token", self.host) # type: ignore
         self.token = token if token else self.get_value_for_key(entry, "token", self.token) # type: ignore
+        self.refresh_token = refresh_token if refresh_token else self.get_value_for_key(entry, "refresh_token", self.refresh_token) # type: ignore
+        self.token_expires_at = int(self.get_value_for_key(entry, "token_expires_at", 0) or 0)
         self.phone_number = phone_number if phone_number else self.get_value_for_key(entry, "phone_number", self.phone_number) # type: ignore
         self.wait_for_image_url = wait_for_image_url if wait_for_image_url is not None else bool(self.get_value_for_key(entry, "event_screenshot_options", False) == "wait") # type: ignore
 
@@ -72,6 +82,13 @@ class AkuvoxData:
         if subdomain is None:
             self.subdomain = "ecloud"
 
+        entry_id = getattr(entry, "entry_id", "config_flow")
+        self._auth_store = storage.Store(
+            self.hass,
+            1,
+            f"{AUTH_STORAGE_KEY}_{entry_id}",
+        )
+        self._auth_storage_lock = asyncio.Lock()
         self.hass.add_job(self.async_set_stored_data_for_key, "wait_for_image_url", self.wait_for_image_url)
 
     def get_value_for_key(self, entry: ConfigEntry, key: str, default):
@@ -81,9 +98,15 @@ class AkuvoxData:
                 if key in entry["configured"]: # type: ignore
                     return entry["configured"][key] # type: ignore
                 return default
-            override = entry.options.get("override", False) or key == "event_screenshot_options"
             placeholder = entry.data.get(key, None)
-            if override:
+            option_keys = {
+                "auth_token",
+                "token",
+                "refresh_token",
+                "subdomain",
+                "event_screenshot_options",
+            }
+            if key in option_keys:
                 return entry.options.get(key, placeholder)
             return placeholder
         return default
@@ -102,6 +125,10 @@ class AkuvoxData:
                 self.auth_token = json_data["auth_token"]
             if "token" in json_data:
                 self.token = json_data["token"]
+            if "refresh_token" in json_data:
+                self.refresh_token = json_data["refresh_token"]
+            if "token_valid" in json_data:
+                self.token_expires_at = int(time.time()) + int(json_data["token_valid"])
             if "rtmp_server" in json_data:
                 self.rtsp_ip = json_data["rtmp_server"].split(':')[0]
 
@@ -236,6 +263,55 @@ class AkuvoxData:
         if stored_data:
             return stored_data.get(key, None)
 
+    async def async_load_auth_session(self) -> bool:
+        """Load the latest rotating token pair from dedicated storage."""
+        async with self._auth_storage_lock:
+            stored_data = await self._auth_store.async_load()
+
+        if stored_data:
+            self.token = stored_data.get("token", self.token)
+            self.refresh_token = stored_data.get(
+                "refresh_token", self.refresh_token
+            )
+            self.token_expires_at = int(
+                stored_data.get("token_expires_at", self.token_expires_at) or 0
+            )
+            return bool(self.token and self.refresh_token)
+
+        if self.token and self.refresh_token:
+            if not self.token_expires_at:
+                self.token_expires_at = (
+                    int(time.time()) + DEFAULT_TOKEN_VALID_SECONDS
+                )
+            await self.async_save_auth_session(
+                self.token,
+                self.refresh_token,
+                self.token_expires_at,
+            )
+            return True
+
+        return False
+
+    async def async_save_auth_session(
+        self,
+        token: str,
+        refresh_token: str,
+        token_expires_at: int,
+    ) -> None:
+        """Persist a complete rotating token pair in one storage write."""
+        session = {
+            "token": token,
+            "refresh_token": refresh_token,
+            "token_expires_at": int(token_expires_at),
+        }
+        # Keep the running process on the new, server-issued pair even if the
+        # subsequent disk write fails. The old rotating pair is no longer safe.
+        self.token = token
+        self.refresh_token = refresh_token
+        self.token_expires_at = int(token_expires_at)
+        async with self._auth_storage_lock:
+            await self._auth_store.async_save(session)
+
     ###################
 
     def get_device_data(self) -> dict:
@@ -244,6 +320,8 @@ class AkuvoxData:
             "host": self.host,
             "token": self.token,
             "auth_token": self.auth_token,
+            "refresh_token": self.refresh_token,
+            "token_expires_at": self.token_expires_at,
             "camera_data": self.camera_data,
             "door_relay_data": self.door_relay_data,
             "door_keys_data": self.door_keys_data

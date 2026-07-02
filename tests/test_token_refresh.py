@@ -13,6 +13,7 @@ import voluptuous as vol
 from custom_components.akuvox.api import AkuvoxApiClient
 from custom_components.akuvox.button import AkuvoxDoorRelayEntity
 from custom_components.akuvox.config_flow import AkuvoxFlowHandler
+from custom_components.akuvox.config_flow import AkuvoxOptionsFlowHandler
 from custom_components.akuvox.data import AkuvoxData
 
 
@@ -167,6 +168,56 @@ async def test_ensure_valid_token_skips_early_rotation(client, monkeypatch):
     client._async_api_wrapper.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_start_polling_is_idempotent(client):
+    """Repeated API initialization cannot create duplicate poll loops."""
+    existing_poller = SimpleNamespace(is_polling=True)
+    client.door_log_poller = existing_poller
+
+    await client.async_start_polling()
+
+    assert client.door_log_poller is existing_poller
+
+
+@pytest.mark.asyncio
+async def test_refresh_scheduler_is_a_background_task(client):
+    """The long-lived scheduler must not block Home Assistant startup."""
+
+    class FakeHass:
+        task = None
+        name = None
+
+        def async_create_background_task(self, target, name):
+            self.task = target
+            self.name = name
+            return SimpleNamespace(done=lambda: False)
+
+    client.hass = FakeHass()
+    client._refresh_task = None
+
+    await client.async_start_token_refresh_scheduler()
+
+    assert client.hass.name == "Akuvox token refresh scheduler"
+    client.hass.task.close()
+
+
+@pytest.mark.asyncio
+async def test_door_log_rate_limit_increases_backoff(client, monkeypatch):
+    """HTTP 429 responses slow polling instead of hammering Akuvox."""
+    client._last_response_status = 429
+    client._door_log_poll_interval = 30
+    client._door_log_backoff = 30
+    client.async_get_personal_door_log = AsyncMock(return_value=None)
+    sleep = AsyncMock(side_effect=asyncio.CancelledError)
+    monkeypatch.setattr("custom_components.akuvox.api.asyncio.sleep", sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await client.async_retrieve_personal_door_log()
+
+    sleep.assert_awaited_once_with(60)
+    assert client._door_log_backoff == 60
+
+
 def test_token_query_values_are_redacted_from_log_urls():
     """API URLs must never expose the rotating access token in logs."""
     assert AkuvoxApiClient._redact_url(
@@ -270,3 +321,12 @@ def test_app_token_setup_requires_refresh_token():
 
     input_data["refresh_token"] = "refresh"
     assert schema(input_data)["refresh_token"] == "refresh"
+
+
+def test_options_flow_uses_supported_config_entry_storage():
+    """Options flow initialization must not assign a read-only HA property."""
+    entry = SimpleNamespace(options={}, data={})
+
+    flow = AkuvoxOptionsFlowHandler(entry)
+
+    assert flow.config_entry is entry

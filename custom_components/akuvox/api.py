@@ -39,6 +39,8 @@ from .const import (
     API_GET_PERSONAL_DOOR_LOG,
     DEFAULT_TOKEN_VALID_SECONDS,
     TOKEN_REFRESH_SAFETY_SECONDS,
+    DOOR_LOG_POLL_INTERVAL_SECONDS,
+    DOOR_LOG_MAX_BACKOFF_SECONDS,
 )
 
 
@@ -72,6 +74,9 @@ class AkuvoxApiClient:
         self.entry = entry
         self._refresh_lock = asyncio.Lock()
         self._refresh_task: asyncio.Task | None = None
+        self._last_response_status: int | None = None
+        self._door_log_poll_interval = DOOR_LOG_POLL_INTERVAL_SECONDS
+        self._door_log_backoff = self._door_log_poll_interval
         if entry:
             LOGGER.debug("▶️ Initializing AkuvoxData from API client init")
             self._data = AkuvoxData(
@@ -99,16 +104,20 @@ class AkuvoxApiClient:
                 LOGGER.error("❌ Unable to find API host address.")
                 return False
 
-        # Begin polling personal door log
-        await self.async_start_polling()
-
         return True
 
     async def async_start_polling(self):
         """Start polling the personal door log API."""
+        if (
+            hasattr(self, "door_log_poller")
+            and self.door_log_poller.is_polling
+        ):
+            return
         self.door_log_poller: DoorLogPoller = DoorLogPoller(
             hass=self.hass,
-            poll_function=self.async_retrieve_personal_door_log)
+            poll_function=self.async_retrieve_personal_door_log,
+            interval=self._door_log_poll_interval,
+        )
         await self.door_log_poller.async_start()
 
     async def async_stop_polling(self):
@@ -126,8 +135,9 @@ class AkuvoxApiClient:
             return
         if self._refresh_task and not self._refresh_task.done():
             return
-        self._refresh_task = self.hass.async_create_task(
-            self._async_token_refresh_scheduler()
+        self._refresh_task = self.hass.async_create_background_task(
+            self._async_token_refresh_scheduler(),
+            "Akuvox token refresh scheduler",
         )
 
     async def async_stop_token_refresh_scheduler(self) -> None:
@@ -657,23 +667,47 @@ class AkuvoxApiClient:
         return None
 
     async def async_start_polling_personal_door_log(self):
-        """Poll the server contineously for the latest personal door log."""
-        # Make sure only 1 instance of the door log polling is running
-        self.hass.async_create_task(self.async_retrieve_personal_door_log())
+        """Start the single personal-door-log poller."""
+        await self.async_start_polling()
 
     async def async_retrieve_personal_door_log(self) -> bool:
-        """Request and parse the user's door log every 2 seconds."""
+        """Request and parse the user's door log with rate-limit backoff."""
         while True:
             # Get the latest pesonal door log
             json_data = await self.async_get_personal_door_log()
+            delay = self._door_log_poll_interval
             if json_data is not None:
+                self._door_log_backoff = self._door_log_poll_interval
                 new_door_log = await self._data.async_parse_personal_door_log(json_data)
                 if new_door_log is not None:
                     # Fire HA event
                     LOGGER.debug("🚪 New door open event occurred. Firing akuvox_door_update event")
                     event_name = "akuvox_door_update"
                     self.hass.bus.async_fire(event_name, new_door_log)
-            await asyncio.sleep(2)  # Wait for 2 seconds before calling again
+            elif self._last_response_status == 429:
+                previous_backoff = self._door_log_backoff
+                self._door_log_backoff = min(
+                    max(
+                        self._door_log_backoff * 2,
+                        self._door_log_poll_interval * 2,
+                    ),
+                    DOOR_LOG_MAX_BACKOFF_SECONDS,
+                )
+                delay = self._door_log_backoff
+                if previous_backoff == self._door_log_poll_interval:
+                    LOGGER.warning(
+                        "Akuvox door-log API rate limited polling; "
+                        "backing off exponentially for up to one hour"
+                    )
+                elif (
+                    delay == DOOR_LOG_MAX_BACKOFF_SECONDS
+                    and previous_backoff != delay
+                ):
+                    LOGGER.warning(
+                        "Akuvox door-log API remains rate limited; "
+                        "reducing retries to once per hour"
+                    )
+            await asyncio.sleep(delay)
 
     async def async_get_personal_door_log(self):
         """Request the user's personal door log data."""
@@ -712,7 +746,8 @@ class AkuvoxApiClient:
         if json_data is not None and len(json_data) > 0:
             return json_data
 
-        LOGGER.error("❌ Unable to retrieve user's personal door log")
+        if self._last_response_status != 429:
+            LOGGER.error("❌ Unable to retrieve user's personal door log")
         return None
 
     ###################
@@ -802,6 +837,7 @@ class AkuvoxApiClient:
 
     def process_response(self, response, url):
         """Process response and return dict with data."""
+        self._last_response_status = response.status_code
         if response.status_code == 200:
             # Assuming the response is valid JSON, parse it
             try:
@@ -833,7 +869,10 @@ class AkuvoxApiClient:
                 LOGGER.error("❌ Error occurred when parsing JSON: %s\nRequest: %s",
                              error,
                              url)
-        else:
+        elif (
+            response.status_code != 429
+            or not url.endswith(API_GET_PERSONAL_DOOR_LOG)
+        ):
             LOGGER.debug("❌ Error: HTTP status code = %s for request to %s",
                          response.status_code,
                          url)

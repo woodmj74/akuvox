@@ -9,4 +9,5 @@ refresh_tokens:
       description: The config entry ID shown in the integration diagnostics.
       required: true
       selector:
-        text:
+        config_entry:
+          integration: akuvox

@@ -12,6 +12,7 @@ from .api import AkuvoxApiClient
 from .coordinator import AkuvoxDataUpdateCoordinator
 
 from .const import (
+    CONF_ENABLE_DOOR_EVENTS,
     DOMAIN,
     DEFAULT_TOKEN,
     DEFAULT_APP_TOKEN,
@@ -470,14 +471,14 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                                  )
         }
 
-class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
+class AkuvoxOptionsFlowHandler(config_entries.OptionsFlowWithConfigEntry):
     """Handle options flow for Akuvox integration."""
 
     akuvox_api_client: AkuvoxApiClient = None  # type: ignore
 
     def __init__(self, config_entry: config_entries.ConfigEntry):
         """Initialize options flow."""
-        self.config_entry = config_entry
+        super().__init__(config_entry)
 
     async def async_step_init(self, user_input=None):
         """Initialize the options flow."""
@@ -533,6 +534,13 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Required("event_screenshot_options",
                          default=self.get_data_key_value("event_screenshot_options", "asap") # type: ignore
             ): vol.In(event_screenshot_options),
+            vol.Required(
+                CONF_ENABLE_DOOR_EVENTS,
+                default=self.get_data_key_value(
+                    CONF_ENABLE_DOOR_EVENTS,
+                    True,
+                ),
+            ): bool,
         })
 
         # Show the form with the current options

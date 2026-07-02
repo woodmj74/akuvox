@@ -14,6 +14,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .config_flow import AkuvoxOptionsFlowHandler
 from .api import AkuvoxApiClient
 from .const import (
+    CONF_ENABLE_DOOR_EVENTS,
     DOMAIN,
     LOGGER
 )
@@ -50,6 +51,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    if entry.options.get(CONF_ENABLE_DOOR_EVENTS, True):
+        await client.async_start_polling()
+    else:
+        LOGGER.debug("Akuvox door-event polling is disabled")
     await client.async_start_token_refresh_scheduler()
     _async_register_services(hass)
 

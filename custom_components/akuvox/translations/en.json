@@ -67,7 +67,8 @@
                     "token": "Your SmartPlus `token` value",
                     "refresh_token": "Your SmartPlus `refresh_token` value",
                     "subdomain": "Manually set the regional API subdomain",
-                    "event_screenshot_options": "Screenshot URLs for `akuvox_door_update` events:"
+                    "event_screenshot_options": "Screenshot URLs for `akuvox_door_update` events:",
+                    "enable_door_events": "Poll Akuvox for door-ring and door-open events"
                 }
             }
         }

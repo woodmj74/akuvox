@@ -22,6 +22,7 @@ class DoorLogPoller:
         self.hass = hass
         self.async_retrieve_personal_door_log = poll_function
         self.interval = interval
+        self.is_polling = False
         self._task = None
 
     async def async_start(self):

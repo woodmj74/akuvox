@@ -250,6 +250,10 @@ Via the integration's `CONFIGURE` button you can adjust the following:
    - Wait for camera screenshots to become available before triggering the event.
    - Receive the event as soon as it is generated, without waiting for camera screenshots.
 
+1. Disable door-event polling if your account cannot access the activity log
+   or you do not use `akuvox_door_update` automations. Gate controls, camera
+   feeds, temporary keys, and token refresh continue to work independently.
+
 ## Finding your SmartPlus Account Tokens
 
 To obtain your SmartPlus account tokens you can use an HTTP proxy (such as [mitmproxy](https://mitmproxy.org/))

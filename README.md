@@ -5,6 +5,9 @@
 
 # Akuvox SmartPlus Integration for Home Assistant
 
+Development and token-refresh handoff details are recorded in
+[DEVELOPMENT_NOTES.md](DEVELOPMENT_NOTES.md).
+
 <img src="https://user-images.githubusercontent.com/1849295/269948645-08c99fe2-253e-49cc-b38b-2a2937c2726d.png" width="100">
 
 Integrate your Akuvox SmartPlus mobile app with Home Assistant. With this integration you can access you door camera feeds, trigger door relays to open doors, be notified when doors are opened, and view your temporary keys _(support for adding temporary keys comming soon)_.

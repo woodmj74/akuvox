@@ -1,3 +1,9 @@
+
+# THIS VERSION HAS BEEN HACKED AROUND BY AN AMATEUR AND AN AI, NO RESPONSIBILITY IS TAKEN FOR THE STATE OF THE CODE.
+# WORKS ON MY MACHINE!!
+
+---
+
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration )
 ![version](https://img.shields.io/github/v/release/nimroddolev/akuvox)
 [![Community Forum][forum-shield]][forum]
